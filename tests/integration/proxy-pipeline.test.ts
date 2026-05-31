@@ -174,7 +174,11 @@ describe("DI Container — container.ts", () => {
 // 3. Plugin Architecture (L-8)
 // ═══════════════════════════════════════════════════
 
-describe("Plugin Architecture — plugins/index.ts", () => {
+describe("Plugin Architecture — plugins/index.ts (unified hooks shim)", () => {
+  // index.ts is now a re-export shim over hooks.ts: registration is
+  // event-based (registerPlugin == registerHook: event, name, handler,
+  // priority). This is the same registry the plugin manager populates and
+  // chatCore.ts runs, so these checks guard the request pipeline wiring.
   let plugins;
 
   beforeEach(async () => {
@@ -186,119 +190,69 @@ describe("Plugin Architecture — plugins/index.ts", () => {
     plugins.resetPlugins();
   });
 
-  it("should register and list plugins", () => {
-    plugins.registerPlugin({
-      name: "test-logger",
-      priority: 10,
-      onRequest: () => {},
-    });
+  const ctx = { requestId: "r1", body: {}, model: "test", provider: "p", metadata: {} };
 
-    const list = plugins.listPlugins();
-    assert.equal(list.length, 1);
-    assert.equal(list[0].name, "test-logger");
-    assert.equal(list[0].priority, 10);
-    assert.deepEqual(list[0].hooks, ["onRequest"]);
-  });
-
-  it("should sort plugins by priority", () => {
-    plugins.registerPlugin({ name: "low", priority: 200 });
-    plugins.registerPlugin({ name: "high", priority: 1 });
-    plugins.registerPlugin({ name: "mid", priority: 50 });
-
-    const list = plugins.listPlugins();
-    assert.deepEqual(
-      list.map((p) => p.name),
-      ["high", "mid", "low"]
-    );
-  });
-
-  it("should run onRequest hooks in order", async () => {
+  it("should run onRequest hooks in priority order", async () => {
     const order = [];
-    plugins.registerPlugin({
-      name: "first",
-      priority: 1,
-      onRequest: () => {
-        order.push("first");
-      },
-    });
-    plugins.registerPlugin({
-      name: "second",
-      priority: 2,
-      onRequest: () => {
-        order.push("second");
-      },
-    });
+    plugins.registerPlugin("onRequest", "second", () => {
+      order.push("second");
+    }, 2);
+    plugins.registerPlugin("onRequest", "first", () => {
+      order.push("first");
+    }, 1);
 
-    const ctx = { requestId: "r1", body: {}, model: "test", metadata: {} };
     await plugins.runOnRequest(ctx);
     assert.deepEqual(order, ["first", "second"]);
   });
 
   it("should support request blocking", async () => {
-    plugins.registerPlugin({
-      name: "blocker",
-      priority: 1,
-      onRequest: () => ({ blocked: true, response: { error: "denied" } }),
-    });
-    plugins.registerPlugin({
-      name: "never-runs",
-      priority: 2,
-      onRequest: () => {
-        throw new Error("should not run");
-      },
-    });
+    plugins.registerPlugin(
+      "onRequest",
+      "blocker",
+      () => ({ blocked: true, response: { error: "denied" } }),
+      1
+    );
 
-    const ctx = { requestId: "r2", body: {}, model: "test", metadata: {} };
     const result = await plugins.runOnRequest(ctx);
     assert.equal(result.blocked, true);
     assert.deepEqual(result.response, { error: "denied" });
   });
 
-  it("should enable/disable plugins at runtime", () => {
-    plugins.registerPlugin({
-      name: "toggle-me",
-      onRequest: () => {},
-    });
-
-    assert.ok(plugins.setPluginEnabled("toggle-me", false));
-    const list = plugins.listPlugins();
-    assert.equal(list[0].enabled, false);
+  it("should accumulate body/metadata across onRequest hooks", async () => {
+    plugins.registerPlugin("onRequest", "tagger", () => ({ metadata: { tagged: true } }));
+    const result = await plugins.runOnRequest(ctx);
+    assert.equal(result.metadata.tagged, true);
   });
 
-  it("should unregister plugins", () => {
-    plugins.registerPlugin({ name: "removable" });
-    assert.equal(plugins.listPlugins().length, 1);
-    assert.ok(plugins.unregisterPlugin("removable"));
-    assert.equal(plugins.listPlugins().length, 0);
-  });
+  it("should chain onResponse hooks", async () => {
+    plugins.registerPlugin("onResponse", "response-modifier", (payload) => ({
+      response: { ...payload.response, modified: true },
+    }));
 
-  it("should run onResponse hooks", async () => {
-    plugins.registerPlugin({
-      name: "response-modifier",
-      onResponse: (_ctx, response) => ({ ...response, modified: true }),
-    });
-
-    const ctx = { requestId: "r3", body: {}, model: "test", metadata: {} };
     const result = await plugins.runOnResponse(ctx, { data: "original" });
     assert.equal(result.modified, true);
     assert.equal(result.data, "original");
   });
 
-  it("should run onError hooks and allow recovery", async () => {
-    plugins.registerPlugin({
-      name: "error-handler",
-      onError: (_ctx, _error) => ({ recovered: true }),
+  it("should fire onError hooks without throwing", async () => {
+    let seen = false;
+    plugins.registerPlugin("onError", "error-handler", () => {
+      seen = true;
     });
 
-    const ctx = { requestId: "r4", body: {}, model: "test", metadata: {} };
-    const result = await plugins.runOnError(ctx, new Error("test error"));
-    assert.deepEqual(result, { recovered: true });
+    await plugins.runOnError(ctx, new Error("test error"));
+    assert.equal(seen, true);
   });
 
-  it("should return null from onError if no recovery", async () => {
-    const ctx = { requestId: "r5", body: {}, model: "test", metadata: {} };
-    const result = await plugins.runOnError(ctx, new Error("unhandled"));
-    assert.equal(result, null);
+  it("should unregister a plugin's hooks", async () => {
+    let calls = 0;
+    plugins.registerPlugin("onRequest", "removable", () => {
+      calls += 1;
+    });
+    await plugins.runOnRequest(ctx);
+    plugins.unregisterPlugin("removable");
+    await plugins.runOnRequest(ctx);
+    assert.equal(calls, 1, "handler must not fire after unregister");
   });
 });
 

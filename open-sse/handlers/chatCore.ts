@@ -1565,8 +1565,10 @@ export async function handleChatCore({
             ),
       };
     }
-    if (pluginResult?.ctx && "body" in pluginResult.ctx) {
-      body = (pluginResult.ctx as unknown as Record<string, unknown>).body;
+    // hooks.ts emitHookBlocking returns the (possibly modified) body directly,
+    // not nested under a ctx — read it from pluginResult.body.
+    if (pluginResult?.body !== undefined) {
+      body = pluginResult.body as typeof body;
     }
   } catch (pluginErr) {
     log?.debug?.(
@@ -5753,6 +5755,20 @@ export async function handleChatCore({
     } catch (_) {
       /* gamification optional */
     }
+  }
+
+  // ── Plugin onResponse hook (fire-and-forget notification) ──
+  try {
+    const { runOnResponse } = await import("@/lib/plugins/index");
+    await runOnResponse(
+      { requestId: traceId, body, model, provider, apiKeyInfo, metadata: {} },
+      { stream: finalStream, headers: responseHeaders }
+    );
+  } catch (pluginErr) {
+    log?.debug?.(
+      "PLUGIN",
+      `onResponse hook error (non-fatal): ${pluginErr instanceof Error ? pluginErr.message : String(pluginErr)}`
+    );
   }
 
   return {
