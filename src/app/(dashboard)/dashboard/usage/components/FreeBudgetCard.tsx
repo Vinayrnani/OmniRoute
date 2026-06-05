@@ -54,6 +54,119 @@ const BAR_HUES = [
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
+// Pool-dedup helpers
+// ────────────────────────────────────────────────────────────────────────────
+
+const RECURRING_TYPES = new Set(["recurring-daily", "recurring-monthly", "keyless"]);
+
+interface BarSegment {
+  /** Unique key for React rendering */
+  key: string;
+  /** Label shown in the tooltip */
+  label: string;
+  tokens: number;
+  color: string;
+}
+
+/**
+ * Build an ordered list of bar segments from per-model data.
+ * - For recurring-type models that share a poolKey, emit ONE segment using the
+ *   pool's MAX monthlyTokens, labeled by the top model's displayName.
+ * - For recurring-type models with poolKey===null, emit one segment each.
+ * The segments therefore sum to `steadyRecurringTokens` (the deduped header total).
+ */
+function buildBarSegments(perModel: FreeBudgetPerModel[]): BarSegment[] {
+  // Deterministic color by provider — stable hue even if model order changes
+  const providerColorCache = new Map<string, string>();
+  function colorFor(provider: string): string {
+    if (!providerColorCache.has(provider)) {
+      // Assign from BAR_HUES in first-seen order
+      const idx = providerColorCache.size;
+      providerColorCache.set(provider, BAR_HUES[idx % BAR_HUES.length]);
+    }
+    return providerColorCache.get(provider)!;
+  }
+
+  const seenPools = new Map<string, BarSegment>();
+  const looseSegments: BarSegment[] = [];
+
+  for (const m of perModel) {
+    if (!RECURRING_TYPES.has(m.freeType)) continue;
+    if (m.monthlyTokens <= 0) continue;
+
+    if (m.poolKey) {
+      const existing = seenPools.get(m.poolKey);
+      if (!existing) {
+        seenPools.set(m.poolKey, {
+          key: `pool:${m.poolKey}`,
+          label: `${m.displayName} (${m.provider})`,
+          tokens: m.monthlyTokens,
+          color: colorFor(m.provider),
+        });
+      } else if (m.monthlyTokens > existing.tokens) {
+        // Keep max within the pool; update label to the larger model
+        seenPools.set(m.poolKey, { ...existing, tokens: m.monthlyTokens, label: `${m.displayName} (${m.provider})` });
+      }
+    } else {
+      looseSegments.push({
+        key: `model:${m.modelId}`,
+        label: `${m.displayName}`,
+        tokens: m.monthlyTokens,
+        color: colorFor(m.provider),
+      });
+    }
+  }
+
+  return [...seenPools.values(), ...looseSegments];
+}
+
+/**
+ * Map each perModel entry to the color of its pool/provider bar segment.
+ * Used so the legend swatches match the bar segment for that provider.
+ */
+function buildLegendColorMap(
+  perModel: FreeBudgetPerModel[],
+  segments: BarSegment[],
+): Map<string, string> {
+  // Build: poolKey → color, provider → color from the resolved segments
+  const poolColorMap = new Map<string, string>();
+  const providerColorMap = new Map<string, string>();
+  for (const seg of segments) {
+    if (seg.key.startsWith("pool:")) {
+      const pk = seg.key.slice("pool:".length);
+      poolColorMap.set(pk, seg.color);
+    }
+  }
+  for (const m of perModel) {
+    if (m.poolKey && poolColorMap.has(m.poolKey)) {
+      providerColorMap.set(m.provider, poolColorMap.get(m.poolKey)!);
+    }
+  }
+  // For loose segments, map by model key directly
+  const modelColorMap = new Map<string, string>();
+  for (const seg of segments) {
+    if (seg.key.startsWith("model:")) {
+      const mid = seg.key.slice("model:".length);
+      modelColorMap.set(mid, seg.color);
+    }
+  }
+  // Final lookup: per modelId → color
+  const result = new Map<string, string>();
+  for (const m of perModel) {
+    if (modelColorMap.has(m.modelId)) {
+      result.set(m.modelId, modelColorMap.get(m.modelId)!);
+    } else if (m.poolKey && poolColorMap.has(m.poolKey)) {
+      result.set(m.modelId, poolColorMap.get(m.poolKey)!);
+    } else {
+      // Fallback: stable hash by provider
+      const provColor = providerColorMap.get(m.provider) ?? BAR_HUES[0];
+      result.set(m.modelId, provColor);
+    }
+  }
+  return result;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Pure view (SSR-testable — no hooks)
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -71,8 +184,16 @@ export function FreeBudgetView({ data }: { data: FreeBudgetData }) {
       : 0;
 
   const avoidModels = perModel.filter((m) => m.tos === "avoid");
-  const modelsWithTokens = perModel.filter((m) => m.monthlyTokens > 0);
-  const totalBarTokens = modelsWithTokens.reduce((s, m) => s + m.monthlyTokens, 0);
+
+  // Pool-deduped bar segments — their token sum equals steadyRecurringTokens
+  const barSegments = buildBarSegments(perModel);
+  const totalBarTokens = barSegments.reduce((s, seg) => s + seg.tokens, 0);
+
+  // Per-model color lookup for legend swatches (matches bar)
+  const legendColorMap = buildLegendColorMap(perModel, barSegments);
+
+  // Filter legend to entries with something to show (no zero-budget clutter)
+  const legendModels = perModel.filter((m) => m.monthlyTokens > 0 || m.creditTokens > 0);
 
   return (
     <div className="rounded-lg border border-border bg-surface">
@@ -89,23 +210,24 @@ export function FreeBudgetView({ data }: { data: FreeBudgetData }) {
         </span>
       </div>
 
-      {/* Stacked bar */}
-      {modelsWithTokens.length > 0 && (
+      {/* Stacked bar — pool-deduped; segments sum to steadyRecurringTokens */}
+      {barSegments.length > 0 && (
         <div className="px-3 pt-2">
-          <div className="flex h-3 rounded-sm overflow-hidden w-full">
-            {modelsWithTokens.map((m, i) => {
+          <div className="flex h-3 rounded-sm overflow-hidden w-full" data-testid="budget-bar">
+            {barSegments.map((seg) => {
               const width =
                 totalBarTokens > 0
-                  ? ((m.monthlyTokens / totalBarTokens) * 100).toFixed(2)
+                  ? ((seg.tokens / totalBarTokens) * 100).toFixed(2)
                   : "0";
               return (
                 <div
-                  key={m.modelId}
-                  title={`${m.displayName}: ${fmt(m.monthlyTokens)}`}
+                  key={seg.key}
+                  title={`${seg.label}: ${fmt(seg.tokens)}`}
+                  data-testid="bar-segment"
                   style={{
                     flexBasis: `${width}%`,
-                    background: BAR_HUES[i % BAR_HUES.length],
-                    minWidth: m.monthlyTokens > 0 ? "2px" : "0",
+                    background: seg.color,
+                    minWidth: "2px",
                   }}
                 />
               );
@@ -136,32 +258,35 @@ export function FreeBudgetView({ data }: { data: FreeBudgetData }) {
         </div>
       )}
 
-      {/* Per-model legend grid */}
+      {/* Per-model legend grid — filtered to non-zero entries; colors match bar */}
       <div className="px-3 pb-3">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-0.5 mt-1">
-          {perModel.map((m, i) => (
-            <div
-              key={m.modelId}
-              className="flex items-center gap-1.5 px-0 py-1 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded"
-              title={`${m.provider} · ${m.freeType}${m.tos === "avoid" ? " · ⚠ ToS-restricted" : m.tos === "caution" ? " · ⚡ caution" : ""}`}
-            >
-              <span
-                className="inline-block w-2 h-2 rounded-sm flex-shrink-0"
-                style={{ background: BAR_HUES[i % BAR_HUES.length] }}
-              />
-              <span className="text-[11px] text-text-muted tabular-nums truncate">
-                {m.displayName}
-              </span>
-              <span className="text-[11px] text-text-muted tabular-nums ml-auto">
-                {m.monthlyTokens >= 1e6 ? fmt(m.monthlyTokens) : m.monthlyTokens.toLocaleString()}
-              </span>
-              {m.tos === "avoid" && (
-                <span className="material-symbols-outlined text-[11px] text-amber-400">
-                  warning
+          {legendModels.map((m) => {
+            const swatchColor = legendColorMap.get(m.modelId) ?? BAR_HUES[0];
+            return (
+              <div
+                key={m.modelId}
+                className="flex items-center gap-1.5 px-0 py-1 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] rounded"
+                title={`${m.provider} · ${m.freeType}${m.tos === "avoid" ? " · ⚠ ToS-restricted" : m.tos === "caution" ? " · ⚡ caution" : ""}`}
+              >
+                <span
+                  className="inline-block w-2 h-2 rounded-sm flex-shrink-0"
+                  style={{ background: swatchColor }}
+                />
+                <span className="text-[11px] text-text-muted tabular-nums truncate">
+                  {m.displayName}
                 </span>
-              )}
-            </div>
-          ))}
+                <span className="text-[11px] text-text-muted tabular-nums ml-auto">
+                  {m.monthlyTokens >= 1e6 ? fmt(m.monthlyTokens) : m.monthlyTokens.toLocaleString()}
+                </span>
+                {m.tos === "avoid" && (
+                  <span className="material-symbols-outlined text-[11px] text-amber-400">
+                    warning
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
