@@ -76,6 +76,12 @@ function billions(n: number): string {
 /**
  * Sum the documented free-tier budgets. `excludeTosAvoid` drops providers whose
  * terms prohibit proxy use (not usable headroom).
+ *
+ * @deprecated Superseded by the per-MODEL catalog. Use
+ * `computeFreeModelTotals()` from `./freeModelCatalog.ts` — it is the canonical
+ * source behind `/api/free-tier/summary` (~1.94B steady vs this per-provider
+ * ~1.54B). This per-provider aggregator is retained only for reference; the
+ * `FREE_TIER_TOS` map below is still used as the ToS source of truth.
  */
 export function computeFreeTierTotals(
   opts: { excludeTosAvoid?: boolean } = {}

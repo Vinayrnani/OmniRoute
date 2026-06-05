@@ -13,10 +13,13 @@ lastUpdated: 2026-06-05
 
 | Metric | Tokens / month | Meaning |
 |---|---|---|
-| **Documented recurring grant (defensible)** | **~1.54B** | Sum of 22 providers that publish an explicit daily/monthly token cap or documented RPD. **Use this number.** |
+| **Documented recurring grant (steady)** | **~1.94B** | 50 provider free-tier **pools** (per-model catalog), each shared pool counted **once**. The live source behind `/api/free-tier/summary` and the dashboard's Free-Tier Budget page. **Use this number.** |
+| **+ first month with signup credits** | **~2.53B** | Steady + one-time signup credits (DeepSeek 5M, Together, Jina, …), deduped per account. **First month only** — does not recur. |
 | Theoretical ceiling (all rate limits, 24/7) | ~10.87B | Sum of every provider rate limit extrapolated to non-stop use. **Not a guarantee** — do not headline this. |
 
-**Honest headline:** *OmniRoute aggregates **over 1.54B documented free tokens per month** across 22+ free providers — and RTK + Caveman compression (15–95% token savings) stretches that further.*
+**Honest headline:** *OmniRoute aggregates **over 1.9B documented free tokens per month** (up to ~2.5B in your first month with signup credits) across 50+ free-tier pools — and RTK + Caveman compression (15–95% token savings) stretches that further.*
+
+> The earlier **~1.54B** figure was a conservative per-PROVIDER estimate (22 hand-picked providers). The **~1.94B** above is the per-MODEL catalog (530 models / 50 pools, `open-sse/config/freeModelCatalog.ts`) — now the canonical source. Both use pool deduplication; the per-model catalog is simply more complete.
 
 Biggest **documented** contributors: `mistral` 1.00B, `longcat` 150M, `cloudflare-ai` 122M, `gemini` 60M, `doubao` 60M, `cerebras` 30M.
 
