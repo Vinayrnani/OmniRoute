@@ -1,4 +1,5 @@
-import { computeFreeTierTotals } from "@omniroute/open-sse/config/freeTierCatalog.ts";
+import { computeFreeModelTotals } from "@omniroute/open-sse/config/freeModelCatalog.ts";
+import { sumUsageTokensThisMonth } from "@/lib/db/usageSummary";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -10,11 +11,22 @@ export function OPTIONS(): Response {
   return new Response(null, { status: 204, headers: CORS });
 }
 
-export function GET(req: Request): Response {
+export async function GET(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const excludeTosAvoid = url.searchParams.get("excludeTosAvoid") === "1";
-  const totals = computeFreeTierTotals({ excludeTosAvoid });
-  return new Response(JSON.stringify(totals), {
+  const totals = computeFreeModelTotals({ excludeTosAvoid });
+  let usedThisMonth = 0;
+  try {
+    usedThisMonth = sumUsageTokensThisMonth();
+  } catch {
+    usedThisMonth = 0;
+  }
+  const body = {
+    ...totals,
+    usedThisMonth,
+    remaining: Math.max(0, totals.steadyRecurringTokens - usedThisMonth),
+  };
+  return new Response(JSON.stringify(body), {
     status: 200,
     headers: { "Content-Type": "application/json", ...CORS },
   });
