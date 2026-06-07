@@ -965,6 +965,11 @@ export function classifyErrorText(errorText: unknown): RateLimitReasonValue {
   if (!errorText) return RateLimitReason.UNKNOWN;
   const lower = String(errorText).toLowerCase();
 
+  // Check daily quota first — locks until midnight vs. exponential backoff
+  if (isDailyQuotaExhausted(lower)) {
+    return RateLimitReason.DAILY_QUOTA;
+  }
+
   if (
     lower.includes("quota exceeded") ||
     lower.includes("quota depleted") ||
@@ -1304,7 +1309,7 @@ export function checkFallbackError(
       return {
         shouldFallback: true,
         cooldownMs,
-        reason: RateLimitReason.QUOTA_EXHAUSTED,
+        reason: RateLimitReason.DAILY_QUOTA,
         dailyQuotaExhausted: true,
       };
     }
