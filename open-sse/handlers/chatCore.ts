@@ -56,6 +56,7 @@ import {
   STREAM_IDLE_TIMEOUT_MS,
   STREAM_READINESS_TIMEOUT_MS,
   ANTIGRAVITY_PRE_RESPONSE_TIMEOUT_CODE,
+  RateLimitReason,
 } from "../config/constants.ts";
 import {
   classifyProviderError,
@@ -167,7 +168,7 @@ import {
   buildAccountSemaphoreKey,
   markBlocked as markAccountSemaphoreBlocked,
 } from "../services/accountSemaphore.ts";
-import { lockModel, lockModelIfPerModelQuota } from "../services/accountFallback.ts";
+import { lockModel, lockModelIfPerModelQuota, classifyErrorText } from "../services/accountFallback.ts";
 import {
   generateSignature,
   getCachedResponse,
@@ -4625,6 +4626,11 @@ export async function handleChatCore({
       upstreamErrorBody = details.responseBody;
       upstreamErrorCode = details.errorCode as string | undefined;
       upstreamErrorType = details.errorType as string | undefined;
+    }
+
+    // Check for daily quota exhaustion (distinct from RPM rate limiting)
+    if (statusCode === 429 && classifyErrorText(message) === RateLimitReason.DAILY_QUOTA) {
+      message = "Daily quota reached for this provider/model. Try again tomorrow or use a different model.";
     }
 
     // T06/T10/T36: classify provider errors and persist terminal account states.

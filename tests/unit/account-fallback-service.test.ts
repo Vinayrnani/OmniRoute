@@ -710,7 +710,7 @@ test("checkFallbackError locks model until tomorrow for non-429 daily quota exha
     "You have exceeded today's quota for model moonshotai/Kimi-K2.5, please try again tomorrow"
   );
   assert.equal(result.shouldFallback, true);
-  assert.equal(result.reason, RateLimitReason.QUOTA_EXHAUSTED);
+  assert.equal(result.reason, RateLimitReason.DAILY_QUOTA);
   assert.equal(result.dailyQuotaExhausted, true);
   assert.ok(result.cooldownMs > 0, "cooldown should be positive");
   assert.ok(result.cooldownMs <= 24 * 60 * 60 * 1000, "cooldown should be <= 24 hours");
@@ -758,7 +758,7 @@ test("checkFallbackError preserves OAuth 429 daily quota semantics", () => {
   );
 
   assert.equal(result.shouldFallback, true);
-  assert.equal(result.reason, RateLimitReason.QUOTA_EXHAUSTED);
+  assert.equal(result.reason, RateLimitReason.DAILY_QUOTA);
   assert.equal(result.dailyQuotaExhausted, true);
   assert.ok(result.cooldownMs > 0);
 });

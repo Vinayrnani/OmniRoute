@@ -144,7 +144,9 @@ export const BACKOFF_STEPS_MS = [60_000, 120_000, 300_000, 600_000, 1_200_000];
 // Structured error classification for rate limiting decisions
 export const RateLimitReason = {
   QUOTA_EXHAUSTED: "quota_exhausted", // Daily/monthly quota depleted
+  DAILY_QUOTA: "daily_quota", // Daily quota specifically (resets at midnight)
   RATE_LIMIT_EXCEEDED: "rate_limit_exceeded", // RPM/RPD limits hit
+
   MODEL_CAPACITY: "model_capacity", // Model overloaded (529, 503)
   SERVER_ERROR: "server_error", // 5xx errors
   AUTH_ERROR: "auth_error", // 401, 403

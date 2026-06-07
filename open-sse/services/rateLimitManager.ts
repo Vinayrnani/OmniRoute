@@ -12,6 +12,7 @@ import Bottleneck from "bottleneck";
 import { parseRetryAfterFromBody } from "./accountFallback.ts";
 import { getProviderCategory } from "../config/providerRegistry.ts";
 import { getCodexRateLimitKey } from "../executors/codex.ts";
+import { getDbInstance } from "../../src/lib/db/core.ts";
 import {
   DEFAULT_RESILIENCE_SETTINGS,
   resolveResilienceSettings,
@@ -1013,4 +1014,54 @@ export function updateFromResponseBody(provider, connectionId, responseBody, sta
       reservoirRefreshInterval: retryAfterMs,
     });
   }
+}
+
+/**
+ * Atomically increment the daily request counter for a provider/connection/model.
+ * Uses SQLite UPSERT to ensure atomicity — no SELECT-then-UPDATE race condition.
+ * Counters automatically reset when the date changes (new row per date).
+ *
+ * @param {string} id - Unique identifier (e.g., "provider:connectionId" or "provider:connectionId:model")
+ * @returns {number} The new count after increment
+ */
+export function incrementDailyUsage(id: string): number {
+  const db = getDbInstance();
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+  const stmt = db.prepare(`
+    INSERT INTO rpd_counters (id, date, count)
+    VALUES (?, ?, 1)
+    ON CONFLICT (id, date) DO UPDATE SET count = count + 1
+    RETURNING count
+  `);
+
+  const result = stmt.get(id, today) as { count: number } | undefined;
+  return result?.count ?? 1;
+}
+
+/**
+ * Get the current daily usage count for a provider/connection/model.
+ *
+ * @param {string} id - Unique identifier (e.g., "provider:connectionId" or "provider:connectionId:model")
+ * @returns {number} Current count for today, or 0 if no entry exists
+ */
+export function getDailyUsage(id: string): number {
+  const db = getDbInstance();
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+  const stmt = db.prepare("SELECT count FROM rpd_counters WHERE id = ? AND date = ?");
+  const result = stmt.get(id, today) as { count: number } | undefined;
+  return result?.count ?? 0;
+}
+
+/**
+ * Check if daily usage has exceeded a limit.
+ *
+ * @param {string} id - Unique identifier
+ * @param {number} limit - Maximum requests allowed per day
+ * @returns {boolean} True if limit exceeded, false otherwise
+ */
+export function isDailyLimitExceeded(id: string, limit: number): boolean {
+  if (limit <= 0) return false; // No limit configured
+  return getDailyUsage(id) >= limit;
 }
