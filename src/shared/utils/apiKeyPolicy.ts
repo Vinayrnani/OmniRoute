@@ -524,40 +524,42 @@ export async function enforceApiKeyPolicy(
     }
   }
 
-  // ── Check 5: Generic Multi-Window Rate Limits ──
-  if (apiKeyInfo.id) {
-    const hasCustomRateLimits = Boolean(apiKeyInfo.rateLimits && apiKeyInfo.rateLimits.length > 0);
-    const rulesToApply = hasCustomRateLimits
-      ? [...(apiKeyInfo.rateLimits as RateLimitRule[])]
-      : [...DEFAULT_RATE_LIMITS, ...ENV_DEFAULT_RATE_LIMITS];
+    // ── Check 5: Generic Multi-Window Rate Limits ──
+    if (apiKeyInfo.id) {
+      const hasCustomRateLimits = Boolean(apiKeyInfo.rateLimits && apiKeyInfo.rateLimits.length > 0);
+      const rulesToApply = hasCustomRateLimits
+        ? [...(apiKeyInfo.rateLimits as RateLimitRule[])]
+        : [...DEFAULT_RATE_LIMITS, ...ENV_DEFAULT_RATE_LIMITS];
 
-    // Combine with legacy limits if they exist and custom rate limits aren't set
-    if (!hasCustomRateLimits) {
-      if (apiKeyInfo.maxRequestsPerDay) {
+      // Explicitly enforce Requests Per Day if configured
+      if (apiKeyInfo.maxRequestsPerDay && apiKeyInfo.maxRequestsPerDay > 0) {
         rulesToApply.push({ limit: apiKeyInfo.maxRequestsPerDay, window: 86400 });
       }
-      if (apiKeyInfo.maxRequestsPerMinute) {
-        rulesToApply.push({ limit: apiKeyInfo.maxRequestsPerMinute, window: 60 });
-      }
-    }
 
-    if (rulesToApply.length > 0) {
-      const rateLimitResult = await checkRateLimit(apiKeyInfo.id, rulesToApply);
-      if (!rateLimitResult.allowed) {
-        const failedWindowStr = rateLimitResult.failedWindow
-          ? ` (${rateLimitResult.failedWindow}s window)`
-          : "";
-        return {
-          apiKey,
-          apiKeyInfo,
-          rejection: errorResponse(
-            HTTP_STATUS.RATE_LIMITED,
-            `Request limit exceeded${failedWindowStr}. Please try again later.`
-          ),
-        };
+      // Combine with legacy limits if they exist and custom rate limits aren't set
+      if (!hasCustomRateLimits) {
+        if (apiKeyInfo.maxRequestsPerMinute) {
+          rulesToApply.push({ limit: apiKeyInfo.maxRequestsPerMinute, window: 60 });
+        }
+      }
+
+      if (rulesToApply.length > 0) {
+        const rateLimitResult = await checkRateLimit(apiKeyInfo.id, rulesToApply);
+        if (!rateLimitResult.allowed) {
+          const failedWindowStr = rateLimitResult.failedWindow
+            ? ` (${rateLimitResult.failedWindow}s window)`
+            : "";
+          return {
+            apiKey,
+            apiKeyInfo,
+            rejection: errorResponse(
+              HTTP_STATUS.RATE_LIMITED,
+              `Request limit exceeded${failedWindowStr}. Please try again later.`
+            ),
+          };
+        }
       }
     }
-  }
 
   // ── Check 6: Soft throttle / slowdown ──
   if (apiKeyInfo.throttleDelayMs && apiKeyInfo.throttleDelayMs > 0) {

@@ -14,8 +14,7 @@ import {
   isProviderFailureCode,
   isProviderExhaustedReason,
 } from "./accountFallback.ts";
-import { RateLimitReason } from "../config/constants.ts";
-import { FETCH_TIMEOUT_MS, RateLimitReason } from "../config/constants.ts";
+import { RateLimitReason, FETCH_TIMEOUT_MS } from "../config/constants.ts";
 import { errorResponse, unavailableResponse } from "../utils/error.ts";
 import { clamp01 } from "../utils/number.ts";
 import {

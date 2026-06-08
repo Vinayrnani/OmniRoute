@@ -154,6 +154,7 @@ const nextConfig = {
     "keytar",
     "wreq-js",
     "zod",
+    "cloakbrowser",
     "tls-client-node",
     "koffi",
     "tough-cookie",
