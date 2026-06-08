@@ -3951,12 +3951,13 @@ export async function handleComboChat({
         }
 
         break;
+        }
       }
+    }
     } finally {
       // ALWAYS release semaphore slot
       release();
     }
-  }
 
   // All models exhausted
   const latencyMs = Date.now() - startTime;

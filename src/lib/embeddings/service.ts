@@ -12,7 +12,7 @@ import * as log from "@/sse/utils/logger";
 import { toJsonErrorPayload } from "@/shared/utils/upstreamError";
 import { getProviderCredentials, clearRecoveredProviderState } from "@/sse/services/auth";
 import { getProviderNodes, getComboByName, getCombos, getDatabaseSettings } from "@/lib/localDb";
-import { handleComboChat } from "@omniroute/open-sse/services/combo.ts";
+import { handleComboChat } from "@omniroute/open-sse/services/combo";
 import { findEmbeddingComboDimensionConflict } from "./familyGuard";
 
 type ValidatedEmbeddingBody = Record<string, unknown> & { model: string };
