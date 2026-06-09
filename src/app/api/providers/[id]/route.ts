@@ -24,7 +24,7 @@ import {
 } from "@/lib/providers/claudeExtraUsage";
 import { requireManagementAuth } from "@/lib/api/requireManagementAuth";
 import { isApiKeyRevealEnabled, maskStoredApiKey } from "@/lib/apiKeyExposure";
-import { refreshConnectionRateLimits, enableRateLimitProtection } from "@/../open-sse/services/rateLimitManager";
+import { refreshConnectionRateLimits, refreshConnectionRpdResetStrategy, enableRateLimitProtection } from "@/../open-sse/services/rateLimitManager";
 
 function normalizeCodexLimitPolicy(
   incoming: unknown,
@@ -293,6 +293,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (rateLimitOverrides !== undefined) {
       refreshConnectionRateLimits(id, updated?.rateLimitOverrides ?? null);
       enableRateLimitProtection(id);
+    }
+
+    // If rpdResetStrategy was included, refresh the in-memory strategy
+    // so RPD enforcement uses the updated strategy without a restart.
+    if (rpdResetStrategy !== undefined) {
+      refreshConnectionRpdResetStrategy(id, rpdResetStrategy ?? null);
     }
 
     // Hide sensitive fields

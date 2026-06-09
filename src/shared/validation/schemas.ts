@@ -2042,6 +2042,7 @@ export const updateProviderConnectionSchema = z
           rpm: z.coerce.number().int().min(0).max(1_000_000).optional(),
           tpm: z.coerce.number().int().min(0).max(100_000_000).optional(),
           tpd: z.coerce.number().int().min(0).max(10_000_000_000).optional(),
+          rpd: z.coerce.number().int().min(0).max(10_000_000).optional(),
           minTime: z.coerce.number().int().min(0).max(60_000).optional(),
           maxConcurrent: z.coerce.number().int().min(0).max(10_000).optional(),
         }),

@@ -870,7 +870,7 @@ interface EditConnectionModalConnection {
   email?: string;
   priority?: number;
   maxConcurrent?: number | null;
-  rateLimitOverrides?: Record<string, number> | null;
+  rateLimitOverrides?: (Record<string, number> & { rpd?: number }) | null;
   authType?: string;
   provider?: string;
   apiKey?: string;
@@ -10695,6 +10695,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
     rpm: "",
     tpm: "",
     tpd: "",
+    rpd: "",
     minTime: "",
     rateLimitMaxConcurrent: "",
     rpdResetStrategy: "utc_midnight",
@@ -10838,6 +10839,10 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
         tpd:
           connection.rateLimitOverrides?.tpd != null
             ? String(connection.rateLimitOverrides.tpd)
+            : "",
+        rpd:
+          connection.rateLimitOverrides?.rpd != null
+            ? String(connection.rateLimitOverrides.rpd)
             : "",
         minTime:
           connection.rateLimitOverrides?.minTime != null
@@ -11007,6 +11012,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
       if (formData.rpm.trim()) overrides.rpm = Number(formData.rpm);
       if (formData.tpm.trim()) overrides.tpm = Number(formData.tpm);
       if (formData.tpd.trim()) overrides.tpd = Number(formData.tpd);
+      if (formData.rpd.trim()) overrides.rpd = Number(formData.rpd);
       if (formData.minTime.trim()) overrides.minTime = Number(formData.minTime);
       if (formData.rateLimitMaxConcurrent.trim())
         overrides.maxConcurrent = Number(formData.rateLimitMaxConcurrent);
@@ -11487,6 +11493,15 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
                       onChange={(e) => setFormData({ ...formData, tpd: e.target.value })}
                       placeholder="Inherit"
                       hint={t("rateLimitOverridesTpdHint")}
+                    />
+                    <Input
+                      label="RPD"
+                      type="number"
+                      min={0}
+                      value={formData.rpd}
+                      onChange={(e) => setFormData({ ...formData, rpd: e.target.value })}
+                      placeholder="Inherit"
+                      hint="Max requests per day (0 = unlimited)"
                     />
                     <Input
                       label={t("rateLimitOverridesMinTimeLabel")}

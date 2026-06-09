@@ -457,6 +457,24 @@ export function refreshConnectionRateLimits(connectionId, overrides) {
 }
 
 /**
+ * Refresh the in-memory RPD reset strategy for a connection.
+ *
+ * Called after the rpdResetStrategy is updated on a provider connection.
+ * Ensures the live strategy (utc_midnight / rolling_24h) takes effect
+ * without a server restart.
+ *
+ * @param {string} connectionId
+ * @param {string | null | undefined} strategy - New strategy value
+ */
+export function refreshConnectionRpdResetStrategy(connectionId: string, strategy: string | null | undefined) {
+  if (strategy && typeof strategy === "string") {
+    connectionRpdResetStrategy.set(connectionId, strategy);
+  } else {
+    connectionRpdResetStrategy.delete(connectionId);
+  }
+}
+
+/**
  * Get or create a limiter for a given provider+connection combination
  */
 function getLimiterKey(provider, connectionId, model = null) {
@@ -542,11 +560,23 @@ export async function withRateLimit(provider, connectionId, model, fn, signal = 
     throw err;
   }
 
+  // Check RPD (Requests Per Day) limit before dispatching
+  const overrides = connectionRateLimitOverrides.get(connectionId);
+  const rpdLimit = overrides?.rpd;
+  if (typeof rpdLimit === "number" && rpdLimit > 0) {
+    const strategy = connectionRpdResetStrategy.get(connectionId) || "utc_midnight";
+    if (isDailyLimitExceeded(connectionId, rpdLimit, strategy)) {
+      throw new Error(`Daily quota exceeded for ${connectionId} — RPD limit reached. Try again tomorrow.`);
+    }
+  }
+  const rpdStrategy = connectionRpdResetStrategy.get(connectionId) || "utc_midnight";
+
   const limiter = getLimiter(provider, connectionId, model);
   const maxWaitMs = currentRequestQueueSettings.maxWaitMs;
   const scheduleOpts = maxWaitMs && maxWaitMs > 0 ? { expiration: maxWaitMs } : {};
 
   try {
+    let result;
     if (signal) {
       let abortListener: (() => void) | undefined;
       const abortPromise = new Promise<never>((_, reject) => {
@@ -568,15 +598,20 @@ export async function withRateLimit(provider, connectionId, model, fn, signal = 
       });
 
       try {
-        return await Promise.race([limiter.schedule(scheduleOpts, fn), abortPromise]);
+        result = await Promise.race([limiter.schedule(scheduleOpts, fn), abortPromise]);
       } finally {
         if (abortListener) {
           signal.removeEventListener("abort", abortListener);
         }
       }
     } else {
-      return await limiter.schedule(scheduleOpts, fn);
+      result = await limiter.schedule(scheduleOpts, fn);
     }
+    // Increment RPD counter on success
+    if (typeof rpdLimit === "number" && rpdLimit > 0) {
+      incrementDailyUsage(connectionId, rpdStrategy);
+    }
+    return result;
   } catch (err) {
     // Bottleneck throws when a job exceeds its expiration timeout.
     // Surface as a clear rate-limit timeout so callers can fallback.
