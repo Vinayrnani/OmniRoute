@@ -78,6 +78,10 @@ const enabledConnections = new Set<string>();
 // Populated from provider_connections.rateLimitOverrides on startup and refresh.
 const connectionRateLimitOverrides = new Map<string, Record<string, number>>();
 
+// Store per-connection RPD reset strategy (utc_midnight or rolling_24h)
+// Populated from provider_connections.rpd_reset_strategy on startup and refresh.
+const connectionRpdResetStrategy = new Map<string, string>();
+
 // Store learned limits for persistence (debounced)
 const learnedLimits: Record<string, LearnedLimitEntry> = {};
 const MAX_LEARNED_LIMITS = 200;
@@ -349,12 +353,17 @@ export async function initializeRateLimits() {
     );
     updateAllLimiterSettings();
 
-    // Load per-connection rate limit overrides
+    // Load per-connection rate limit overrides and RPD strategy
     connectionRateLimitOverrides.clear();
+    connectionRpdResetStrategy.clear();
     for (const conn of connections as Array<Record<string, unknown>>) {
       const overrides = conn.rateLimitOverrides;
       if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
         connectionRateLimitOverrides.set(String(conn.id), overrides as Record<string, number>);
+      }
+      const strategy = conn.rpdResetStrategy;
+      if (typeof strategy === "string" && strategy) {
+        connectionRpdResetStrategy.set(String(conn.id), strategy);
       }
     }
 
@@ -1016,17 +1025,31 @@ export function updateFromResponseBody(provider, connectionId, responseBody, sta
   }
 }
 
-/**
- * Atomically increment the daily request counter for a provider/connection/model.
- * Uses SQLite UPSERT to ensure atomicity — no SELECT-then-UPDATE race condition.
- * Counters automatically reset when the date changes (new row per date).
- *
- * @param {string} id - Unique identifier (e.g., "provider:connectionId" or "provider:connectionId:model")
- * @returns {number} The new count after increment
- */
-export function incrementDailyUsage(id: string): number {
+function calculateRpdDateKey(id: string, strategy: string): string {
+  if (strategy === "rolling_24h") {
+    const db = getDbInstance();
+    const now = Math.floor(Date.now() / 1000);
+    const firstReqKey = `rpd_first_req:${id}`;
+    const stmt = db.prepare("SELECT value FROM domain_state WHERE key = ?");
+    const row = stmt.get(firstReqKey) as { value?: string } | undefined;
+    let firstReq = row?.value ? Number(row.value) : 0;
+    if (!firstReq || isNaN(firstReq)) {
+      firstReq = now;
+      const upsert = db.prepare(
+        "INSERT INTO domain_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value"
+      );
+      upsert.run(firstReqKey, String(now));
+    }
+    const elapsed = now - firstReq;
+    const windowIndex = Math.floor(elapsed / 86400);
+    return `rolling:${windowIndex}`;
+  }
+  return new Date().toISOString().split("T")[0];
+}
+
+export function incrementDailyUsage(id: string, strategy = "utc_midnight"): number {
   const db = getDbInstance();
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const dateKey = calculateRpdDateKey(id, strategy);
 
   const stmt = db.prepare(`
     INSERT INTO rpd_counters (id, date, count)
@@ -1035,33 +1058,20 @@ export function incrementDailyUsage(id: string): number {
     RETURNING count
   `);
 
-  const result = stmt.get(id, today) as { count: number } | undefined;
+  const result = stmt.get(id, dateKey) as { count: number } | undefined;
   return result?.count ?? 1;
 }
 
-/**
- * Get the current daily usage count for a provider/connection/model.
- *
- * @param {string} id - Unique identifier (e.g., "provider:connectionId" or "provider:connectionId:model")
- * @returns {number} Current count for today, or 0 if no entry exists
- */
-export function getDailyUsage(id: string): number {
+export function getDailyUsage(id: string, strategy = "utc_midnight"): number {
   const db = getDbInstance();
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const dateKey = calculateRpdDateKey(id, strategy);
 
   const stmt = db.prepare("SELECT count FROM rpd_counters WHERE id = ? AND date = ?");
-  const result = stmt.get(id, today) as { count: number } | undefined;
+  const result = stmt.get(id, dateKey) as { count: number } | undefined;
   return result?.count ?? 0;
 }
 
-/**
- * Check if daily usage has exceeded a limit.
- *
- * @param {string} id - Unique identifier
- * @param {number} limit - Maximum requests allowed per day
- * @returns {boolean} True if limit exceeded, false otherwise
- */
-export function isDailyLimitExceeded(id: string, limit: number): boolean {
-  if (limit <= 0) return false; // No limit configured
-  return getDailyUsage(id) >= limit;
+export function isDailyLimitExceeded(id: string, limit: number, strategy = "utc_midnight"): boolean {
+  if (limit <= 0) return false;
+  return getDailyUsage(id, strategy) >= limit;
 }

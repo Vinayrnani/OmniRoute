@@ -34,6 +34,7 @@ export function getRedisClient() {
 export interface RateLimitRule {
   limit: number;
   window: number; // in seconds
+  resetStrategy?: "utc_midnight" | "rolling_24h";
 }
 
 export interface RateLimitResult {
@@ -99,17 +100,45 @@ function checkInMemoryRateLimit(
 ): RateLimitResult {
   const now = Math.floor(Date.now() / 1000);
   for (const rule of rules) {
-    const currentWindow = Math.floor(now / rule.window);
-    const windowKey = `rl:api_key:${keyId}:${rule.window}:${currentWindow}`;
+    let currentWindow: number;
+    let windowKey: string;
+
+    if (rule.resetStrategy === "rolling_24h") {
+      const firstReqKey = `rl:first_req:${keyId}:${rule.window}`;
+      const firstReq = store.get(firstReqKey) || now;
+      if (!store.has(firstReqKey)) {
+        store.set(firstReqKey, now);
+      }
+      currentWindow = Math.floor((now - firstReq) / rule.window);
+      windowKey = `rl:api_key:${keyId}:${rule.window}:rolling:${currentWindow}`;
+    } else {
+      // utc_midnight (default)
+      currentWindow = Math.floor(now / rule.window);
+      windowKey = `rl:api_key:${keyId}:${rule.window}:${currentWindow}`;
+    }
+
     const count = store.get(windowKey) || 0;
     if (count >= rule.limit) {
       return { allowed: false, failedWindow: rule.window };
     }
   }
 
+  // Second pass: increment
   for (const rule of rules) {
-    const currentWindow = Math.floor(now / rule.window);
-    const windowKey = `rl:api_key:${keyId}:${rule.window}:${currentWindow}`;
+    let currentWindow: number;
+    let windowKey: string;
+
+    if (rule.resetStrategy === "rolling_24h") {
+      const firstReqKey = `rl:first_req:${keyId}:${rule.window}`;
+      const firstReq = store.get(firstReqKey) || now;
+      currentWindow = Math.floor((now - firstReq) / rule.window);
+      windowKey = `rl:api_key:${keyId}:${rule.window}:rolling:${currentWindow}`;
+    } else {
+      // utc_midnight (default)
+      currentWindow = Math.floor(now / rule.window);
+      windowKey = `rl:api_key:${keyId}:${rule.window}:${currentWindow}`;
+    }
+
     store.set(windowKey, (store.get(windowKey) || 0) + 1);
   }
 

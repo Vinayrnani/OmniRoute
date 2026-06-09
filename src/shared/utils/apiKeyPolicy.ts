@@ -76,6 +76,7 @@ export interface ApiKeyMetadata {
   accessSchedule?: AccessSchedule | null;
   maxRequestsPerDay?: number | null;
   maxRequestsPerMinute?: number | null;
+  rpdResetStrategy?: "utc_midnight" | "rolling_24h" | null;
   throttleDelayMs?: number | null;
   maxSessions?: number | null;
   rateLimits?: RateLimitRule[] | null;
@@ -533,7 +534,11 @@ export async function enforceApiKeyPolicy(
 
       // Explicitly enforce Requests Per Day if configured
       if (apiKeyInfo.maxRequestsPerDay && apiKeyInfo.maxRequestsPerDay > 0) {
-        rulesToApply.push({ limit: apiKeyInfo.maxRequestsPerDay, window: 86400 });
+        rulesToApply.push({
+          limit: apiKeyInfo.maxRequestsPerDay,
+          window: 86400,
+          resetStrategy: apiKeyInfo.rpdResetStrategy || "utc_midnight",
+        });
       }
 
       // Combine with legacy limits if they exist and custom rate limits aren't set

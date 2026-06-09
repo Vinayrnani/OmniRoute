@@ -363,6 +363,7 @@ export async function createProviderConnection(data: JsonRecord) {
     "perKeyProxyEnabled",
     "quotaWindowThresholds",
     "rateLimitOverrides",
+    "rpdResetStrategy",
   ];
   for (const field of optionalFields) {
     if (data[field] !== undefined && data[field] !== null) {
@@ -419,7 +420,7 @@ function _insertConnectionRow(db: DbLike, conn: JsonRecord) {
       expires_in, display_name, global_priority, default_model,
       token_type, consecutive_use_count, rate_limit_protection, last_used_at, "group", max_concurrent,
       proxy_enabled, per_key_proxy_enabled, quota_window_thresholds_json, rate_limit_overrides_json,
-      created_at, updated_at
+      rpd_reset_strategy, created_at, updated_at
     ) VALUES (
       @id, @provider, @authType, @name, @email, @priority, @isActive,
       @accessToken, @refreshToken, @expiresAt, @tokenExpiresAt,
@@ -430,7 +431,7 @@ function _insertConnectionRow(db: DbLike, conn: JsonRecord) {
       @expiresIn, @displayName, @globalPriority, @defaultModel,
       @tokenType, @consecutiveUseCount, @rateLimitProtection, @lastUsedAt, @group, @maxConcurrent,
       @proxyEnabled, @perKeyProxyEnabled, @quotaWindowThresholdsJson, @rateLimitOverridesJson,
-      @createdAt, @updatedAt
+      @rpdResetStrategy, @createdAt, @updatedAt
     )
   `
   ).run({
@@ -478,6 +479,7 @@ function _insertConnectionRow(db: DbLike, conn: JsonRecord) {
     perKeyProxyEnabled: normalizeBooleanColumn(conn.perKeyProxyEnabled, false) ? 1 : 0,
     quotaWindowThresholdsJson: serializeQuotaWindowThresholds(conn.quotaWindowThresholds),
     rateLimitOverridesJson: serializeRateLimitOverrides(conn.rateLimitOverrides),
+    rpdResetStrategy: conn.rpdResetStrategy || "utc_midnight",
     createdAt: conn.createdAt,
     updatedAt: conn.updatedAt,
   });
@@ -508,6 +510,7 @@ function _updateConnectionRow(db: DbLike, id: string, data: JsonRecord) {
       proxy_enabled = @proxyEnabled,
       per_key_proxy_enabled = @perKeyProxyEnabled,
       rate_limit_overrides_json = @rateLimitOverridesJson,
+      rpd_reset_strategy = @rpdResetStrategy,
       updated_at = @updatedAt
     WHERE id = @id
   `
@@ -556,6 +559,7 @@ function _updateConnectionRow(db: DbLike, id: string, data: JsonRecord) {
     proxyEnabled: normalizeBooleanColumn(data.proxyEnabled, true) ? 1 : 0,
     perKeyProxyEnabled: normalizeBooleanColumn(data.perKeyProxyEnabled, false) ? 1 : 0,
     rateLimitOverridesJson: serializeRateLimitOverrides(data.rateLimitOverrides),
+    rpdResetStrategy: data.rpdResetStrategy || "utc_midnight",
     updatedAt: now,
   });
 }

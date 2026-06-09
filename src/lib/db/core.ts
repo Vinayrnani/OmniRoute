@@ -207,6 +207,7 @@ const SCHEMA_SQL = `
     per_key_proxy_enabled INTEGER NOT NULL DEFAULT 0,
     quota_window_thresholds_json TEXT,
     rate_limit_overrides_json TEXT,
+    rpd_reset_strategy TEXT DEFAULT 'utc_midnight',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -572,6 +573,10 @@ function ensureProviderConnectionsColumns(db: SqliteDatabase) {
     if (!columnNames.has("rate_limit_overrides_json")) {
       db.exec("ALTER TABLE provider_connections ADD COLUMN rate_limit_overrides_json TEXT");
       console.log("[DB] Added provider_connections.rate_limit_overrides_json column");
+    }
+    if (!columnNames.has("rpd_reset_strategy")) {
+      db.exec("ALTER TABLE provider_connections ADD COLUMN rpd_reset_strategy TEXT DEFAULT 'utc_midnight'");
+      console.log("[DB] Added provider_connections.rpd_reset_strategy column");
     }
     db.exec(
       "CREATE INDEX IF NOT EXISTS idx_pc_max_concurrent ON provider_connections(provider, max_concurrent)"

@@ -132,6 +132,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       healthCheckInterval,
       group,
       maxConcurrent,
+      rpdResetStrategy,
       quotaWindowThresholds: incomingWindowThresholds,
       proxyEnabled,
       perKeyProxyEnabled,
@@ -163,6 +164,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (healthCheckInterval !== undefined) updateData.healthCheckInterval = healthCheckInterval;
     if (group !== undefined) updateData.group = group;
     if (maxConcurrent !== undefined) updateData.maxConcurrent = maxConcurrent;
+    if (rpdResetStrategy !== undefined) updateData.rpdResetStrategy = rpdResetStrategy;
     if (incomingWindowThresholds !== undefined) {
       // PATCH semantics:
       //   • null            → clear every per-window override on this connection

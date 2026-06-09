@@ -55,6 +55,7 @@ interface ApiKeyMetadata {
   accessSchedule: AccessSchedule | null;
   maxRequestsPerDay: number | null;
   maxRequestsPerMinute: number | null;
+  rpdResetStrategy: "utc_midnight" | "rolling_24h";
   throttleDelayMs: number | null;
   rateLimits: RateLimitRule[] | null;
   // T08: Per-key max concurrent sticky sessions (0 = unlimited)
@@ -163,6 +164,7 @@ const API_KEY_COLUMN_FALLBACKS = [
   { name: "access_schedule", definition: "access_schedule TEXT" },
   { name: "max_requests_per_day", definition: "max_requests_per_day INTEGER" },
   { name: "max_requests_per_minute", definition: "max_requests_per_minute INTEGER" },
+  { name: "rpd_reset_strategy", definition: "rpd_reset_strategy TEXT DEFAULT 'utc_midnight'" },
   { name: "throttle_delay_ms", definition: "throttle_delay_ms INTEGER" },
   { name: "max_sessions", definition: "max_sessions INTEGER NOT NULL DEFAULT 0" },
   { name: "revoked_at", definition: "revoked_at TEXT" },
@@ -378,7 +380,7 @@ function getPreparedStatements(db: ApiKeysDbLike): ApiKeysStatements {
       "SELECT id, expires_at, revoked_at, is_active, is_banned FROM api_keys WHERE key = ? OR key_hash = ?"
     );
     _stmtGetKeyMetadata = db.prepare<ApiKeyRow>(
-      "SELECT id, name, machine_id, allowed_models, allowed_combos, allowed_connections, allowed_quotas, no_log, auto_resolve, is_active, access_schedule, max_requests_per_day, max_requests_per_minute, throttle_delay_ms, max_sessions, revoked_at, expires_at, ip_allowlist, scopes, rate_limits, is_banned, key_hash, allowed_endpoints, stream_default_mode, disable_non_public_models, proxy_id FROM api_keys WHERE key = ? OR key_hash = ?"
+      "SELECT id, name, machine_id, allowed_models, allowed_combos, allowed_connections, allowed_quotas, no_log, auto_resolve, is_active, access_schedule, max_requests_per_day, max_requests_per_minute, rpd_reset_strategy, throttle_delay_ms, max_sessions, revoked_at, expires_at, ip_allowlist, scopes, rate_limits, is_banned, key_hash, allowed_endpoints, stream_default_mode, disable_non_public_models, proxy_id FROM api_keys WHERE key = ? OR key_hash = ?"
     );
     _stmtInsertKey = db.prepare(
       "INSERT INTO api_keys (id, name, key, machine_id, allowed_models, no_log, created_at, key_prefix, key_hash, scopes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -1261,6 +1263,7 @@ export async function getApiKeyMetadata(
       rateLimits: null,
       maxRequestsPerDay: null,
       maxRequestsPerMinute: null,
+      rpdResetStrategy: "utc_midnight",
       throttleDelayMs: null,
       maxSessions: 0,
       revokedAt: null,
@@ -1320,6 +1323,10 @@ export async function getApiKeyMetadata(
     rateLimits: parseRateLimits(record.rate_limits ?? (record as JsonRecord).rateLimits),
     maxRequestsPerDay: typeof rawMaxRPD === "number" && rawMaxRPD > 0 ? rawMaxRPD : null,
     maxRequestsPerMinute: typeof rawMaxRPM === "number" && rawMaxRPM > 0 ? rawMaxRPM : null,
+    rpdResetStrategy:
+      (record.rpd_reset_strategy ?? (record as JsonRecord).rpdResetStrategy) === "rolling_24h"
+        ? "rolling_24h"
+        : "utc_midnight",
     throttleDelayMs:
       typeof rawThrottleDelayMs === "number" && rawThrottleDelayMs > 0 ? rawThrottleDelayMs : null,
     // T08: max concurrent sessions; 0 = unlimited (default & backward-compatible)

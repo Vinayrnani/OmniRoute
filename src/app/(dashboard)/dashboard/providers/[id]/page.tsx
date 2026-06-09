@@ -10697,6 +10697,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
     tpd: "",
     minTime: "",
     rateLimitMaxConcurrent: "",
+    rpdResetStrategy: "utc_midnight",
     apiKey: "",
     healthCheckInterval: 60,
     baseUrl: "",
@@ -10876,6 +10877,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
           connection.providerSpecificData
         ),
         passthroughModels: connection?.providerSpecificData?.passthroughModels === true,
+        rpdResetStrategy: connection.rpdResetStrategy || "utc_midnight",
       });
       // Load existing extra keys from providerSpecificData
       const existing = connection.providerSpecificData?.extraApiKeys;
@@ -10997,6 +10999,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
         priority: formData.priority,
         maxConcurrent: parsedMaxConcurrent,
         healthCheckInterval: formData.healthCheckInterval,
+        rpdResetStrategy: formData.rpdResetStrategy,
       };
 
       // Build rateLimitOverrides from non-empty fields
@@ -11505,6 +11508,24 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }: EditConnec
                       placeholder="Inherit"
                       hint={t("rateLimitOverridesMaxConcurrentHint")}
                     />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        RPD Reset Strategy
+                      </label>
+                      <select
+                        value={formData.rpdResetStrategy}
+                        onChange={(e) =>
+                          setFormData({ ...formData, rpdResetStrategy: e.target.value })
+                        }
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                      >
+                        <option value="utc_midnight">UTC Midnight (resets at 00:00 UTC daily)</option>
+                        <option value="rolling_24h">Rolling 24 Hours (resets 24h after first request)</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        How the daily request counter resets
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

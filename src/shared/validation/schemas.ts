@@ -2014,6 +2014,7 @@ export const updateProviderConnectionSchema = z
     healthCheckInterval: z.coerce.number().int().min(0).optional(),
     group: z.union([z.string().max(100), z.null()]).optional(),
     maxConcurrent: z.union([z.null(), z.coerce.number().int().min(0)]).optional(),
+    rpdResetStrategy: z.enum(["utc_midnight", "rolling_24h"]).optional(),
     // Per-window quota cutoffs. Map keys are window names (e.g. "window5h",
     // "window7d"); values are 0-100 integers, or null to clear that window's
     // override (the API route merges this into the existing map and prunes
